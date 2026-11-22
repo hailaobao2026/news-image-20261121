@@ -1,199 +1,251 @@
-#!/usr/bin/env python3
-"""Draw the front page for Saturday 21 November 2026 (1024x1024 PNG).
+"""Render the 21 November 2026 front page: a 1024x1024 newspaper infographic.
 
-Written from scratch in this session with Pillow + DejaVu fonts.
-Every fact on the page was checked against at least two independent
-sources on 2026-11-22; see build-log.md for the source list.
+Everything is drawn in code with PIL. No network, no external assets.
+Layout (own design): masthead, one lead story with a drawn badge, a
+two-column story grid, a numbers box, an ALSO TODAY band, and a sources
+footer.
 """
-import hashlib
-import os
+
+import math
 
 from PIL import Image, ImageDraw, ImageFont
 
-CANVAS = (1024, 1024)
-EDGE = 36
-INNER = CANVAS[0] - 2 * EDGE
+W = 1024
+H = 1024
+MARGIN = 36
 
-PAPER = (248, 244, 235)
-INK = (24, 24, 24)
-BODY = (60, 58, 52)
-NAVY = (20, 34, 58)
-GOLD = (203, 164, 40)
-CRIMSON = (178, 38, 30)
-RULE = (182, 174, 157)
-GREY = (92, 88, 78)
+PAPER = (246, 241, 230)
+INK = (26, 26, 26)
+NAVY = (22, 50, 79)
+RED = (180, 35, 24)
+GREY = (91, 91, 91)
+LIGHT_GREY = (200, 192, 175)
+WHITE = (255, 255, 255)
 
-FONTS = "/usr/share/fonts/truetype/dejavu"
-
-
-def load(name, size):
-    return ImageFont.truetype(os.path.join(FONTS, name), size)
+FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 
 
-MASTHEAD = load("DejaVuSans-Bold.ttf", 50)
-DATE = load("DejaVuSans-Bold.ttf", 32)
-TAGLINE = load("DejaVuSans.ttf", 19)
-KICKER = load("DejaVuSans-Bold.ttf", 20)
-HEADLINE = load("DejaVuSans-Bold.ttf", 40)
-DECK = load("DejaVuSans.ttf", 21)
-LABEL = load("DejaVuSans-Bold.ttf", 17)
-TITLE = load("DejaVuSans-Bold.ttf", 26)
-TEXT = load("DejaVuSans.ttf", 19)
-TITLE_S = load("DejaVuSans-Bold.ttf", 23)
-TEXT_S = load("DejaVuSans.ttf", 17)
-ALSO_H = load("DejaVuSans-Bold.ttf", 20)
-ALSO_T = load("DejaVuSans-Bold.ttf", 18)
-ALSO_D = load("DejaVuSans.ttf", 16)
-FOOT = load("DejaVuSans.ttf", 14)
+def _font(name, size):
+    return ImageFont.truetype(f"{FONT_DIR}/{name}", size)
 
 
-def wrap(text, fnt, width):
-    out, cur = [], ""
-    for word in text.split():
-        trial = (cur + " " + word).strip()
-        if fnt.getlength(trial) <= width:
-            cur = trial
-        else:
-            if cur:
-                out.append(cur)
-            cur = word
-    if cur:
-        out.append(cur)
-    return out
+def serif_bold(size):
+    return _font("DejaVuSerif-Bold.ttf", size)
 
 
-def para(draw, x, y, lines, fnt, fill, step):
-    for ln in lines:
-        draw.text((x, y), ln, font=fnt, fill=fill)
-        y += step
+def serif(size):
+    return _font("DejaVuSerif.ttf", size)
+
+
+def sans_bold(size):
+    return _font("DejaVuSans-Bold.ttf", size)
+
+
+def sans(size):
+    return _font("DejaVuSans.ttf", size)
+
+
+def wrap(draw, text, font, max_width):
+    """Greedy word wrap; returns a list of lines that fit max_width."""
+    lines = []
+    for paragraph in text.split("\n"):
+        words = paragraph.split()
+        if not words:
+            lines.append("")
+            continue
+        current = words[0]
+        for word in words[1:]:
+            trial = current + " " + word
+            if draw.textlength(trial, font=font) <= max_width:
+                current = trial
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+    return lines
+
+
+def text_block(draw, x, y, lines, font, fill, leading):
+    """Draw lines starting at (x, y); return the y after the last line."""
+    for line in lines:
+        draw.text((x, y), line, font=font, fill=fill)
+        y += leading
     return y
 
 
-canvas = Image.new("RGB", CANVAS, PAPER)
-d = ImageDraw.Draw(canvas)
-
-# ---- masthead ------------------------------------------------------------
-d.rectangle([0, 0, CANVAS[0], 146], fill=NAVY)
-d.text((CANVAS[0] // 2, 20), "THE WORLD IN ONE DAY", font=MASTHEAD,
-       fill=(255, 255, 255), anchor="ma")
-d.line([EDGE, 90, CANVAS[0] - EDGE, 90], fill=GOLD, width=2)
-d.text((CANVAS[0] // 2, 100), "SATURDAY, 21 NOVEMBER 2026", font=DATE,
-       fill=GOLD, anchor="ma")
-d.text((CANVAS[0] // 2, 152), "The day's world news \u2014 in one picture",
-       font=TAGLINE, fill=GREY, anchor="ma")
-
-y = 186
-
-# ---- lead story: Mexico --------------------------------------------------
-d.text((EDGE, y), "MEXICO  \u00b7  CARTEL CAPTURE", font=KICKER, fill=CRIMSON)
-y += 27
-lead = "Mexico captures \u201cEl Chapo Isidro\u201d"
-lead_lines = wrap(lead, HEADLINE, INNER)
-assert len(lead_lines) == 1, lead_lines
-y = para(d, EDGE, y, lead_lines, HEADLINE, INK, 48)
-lead_deck = ("Mexican special forces seized Fausto Isidro Meza Flores, one "
-             "of the FBI's 10 most wanted fugitives, in Sinaloa on Friday "
-             "night with US intelligence help. Four soldiers and seven "
-             "gunmen were killed in the operation.")
-y = para(d, EDGE, y + 5,
-         wrap(lead_deck, DECK, INNER), DECK, BODY, 27)
-y += 10
-d.line([EDGE, y, CANVAS[0] - EDGE, y], fill=RULE, width=2)
-y += 16
+def rule(draw, x0, x1, y, fill, width=2):
+    draw.line([(x0, y), (x1, y)], fill=fill, width=width)
 
 
-def card(x, w, label, colour, title, body, tfnt, bfnt, tstep, bstep):
-    """One story block; returns the y just below it."""
-    top = y
-    d.text((x, top), label, font=LABEL, fill=colour)
-    ty = para(d, x, top + 24, wrap(title, tfnt, w), tfnt, INK, tstep)
-    by = para(d, x, ty + 5, wrap(body, bfnt, w), bfnt, BODY, bstep)
-    return by
+def star_points(cx, cy, outer, inner, points=5, rotation=-90):
+    pts = []
+    for i in range(points * 2):
+        r = outer if i % 2 == 0 else inner
+        angle = math.radians(rotation + i * 180 / points)
+        pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
+    return pts
 
 
-# ---- middle row: two stories --------------------------------------------
-half = (INNER - 28) // 2
-row_top = y
-end1 = card(EDGE, half, "CLIMATE  \u00b7  COP31", (18, 120, 58),
-            "COP31 talks run into overtime with no deal in sight",
-            "Negotiators in Antalya worked past Friday's deadline with "
-            "the draft deal silent on fossil fuels. The EU: \u201ca good "
-            "deal or no deal\u201d.",
-            TITLE, TEXT, 30, 24)
-end2 = card(EDGE + half + 28, half, "WAR IN UKRAINE", (14, 112, 104),
-            "Russian strike kills 2 in Zelenskyy's hometown",
-            "A double-tap missile attack on Kryvyi Rih killed a "
-            "7-year-old boy and a 20-year-old paramedic and wounded 60, "
-            "hours after a huge barrage on Kyiv.",
-            TITLE, TEXT, 30, 24)
-y = max(end1, end2) + 12
-d.line([EDGE, y, CANVAS[0] - EDGE, y], fill=RULE, width=1)
-y += 12
+def story(draw, x, y, width, kicker, headline, body,
+          headline_size=21, body_size=15):
+    """One story: red kicker, bold headline, grey body. Returns end y."""
+    draw.text((x, y), kicker, font=sans_bold(13), fill=RED)
+    y += 22
+    lines = wrap(draw, headline, serif_bold(headline_size), width)
+    y = text_block(draw, x, y, lines, serif_bold(headline_size), INK,
+                   headline_size + 6)
+    y += 2
+    lines = wrap(draw, body, sans(body_size), width)
+    y = text_block(draw, x, y, lines, sans(body_size), GREY,
+                   body_size + 5)
+    return y
 
-# ---- lower row: three stories -------------------------------------------
-third = (INNER - 2 * 24) // 3
-ends = []
-ends.append(card(EDGE, third, "BALTIC SEA", (26, 74, 204),
-                 "Russian ship ablaze after drone strike",
-                 "The sanctioned cargo ship Sparta II caught fire in the "
-                 "Gulf of Finland and drifted into Finnish waters. Its "
-                 "16 crew were evacuated.",
-                 TITLE_S, TEXT_S, 26, 21))
-ends.append(card(EDGE + third + 24, third, "PERU", (176, 84, 8),
-                 "Magnitude 6.7 quake shakes the Andes",
-                 "The tremor struck near Jun\u00edn on Friday evening and "
-                 "was felt in Lima. No deaths or serious damage were "
-                 "reported.",
-                 TITLE_S, TEXT_S, 27, 22))
-ends.append(card(EDGE + 2 * (third + 24), third, "DIPLOMACY", (108, 40, 214),
-                 "Trump told Europe it spends too much, Zelensky says",
-                 "Zelensky said on Saturday that Trump, after his summit "
-                 "with Putin and Xi, told European leaders they could "
-                 "spend the money at home if peace is reached.",
-                 TITLE_S, TEXT_S, 26, 21))
-y = max(ends) + 12
-d.line([EDGE, y, CANVAS[0] - EDGE, y], fill=RULE, width=2)
-y += 12
 
-# ---- also today -----------------------------------------------------------
-d.text((EDGE, y), "ALSO TODAY", font=ALSO_H, fill=CRIMSON)
-y += 27
-also = [
-    ("Tainted liquor kills at least 11 in India",
-     "More than 180 people were hospitalised in Manipur after drinking "
-     "suspected adulterated alcohol."),
-    ("EU approves \u20ac1bn more military aid for Ukraine",
-     "The package will fund drones, air defence and ammunition, to be "
-     "delivered by the end of 2027."),
-    ("Two tankers hit near the Strait of Hormuz",
-     "The vessels were struck by projectiles on Saturday, the UK "
-     "maritime trade office said, as tensions over Iran rise."),
-]
-bottom = y
-for i, (head, deck) in enumerate(also):
-    x = EDGE + i * (third + 24)
-    ny = para(d, x, y, wrap(head, ALSO_T, third), ALSO_T, INK, 23)
-    ny = para(d, x, ny + 4, wrap(deck, ALSO_D, third), ALSO_D, BODY, 20)
-    bottom = max(bottom, ny)
-y = bottom + 12
-d.line([EDGE, y, CANVAS[0] - EDGE, y], fill=RULE, width=1)
-y += 8
-d.text((CANVAS[0] // 2, y),
-       "Sources: Reuters \u00b7 AP \u00b7 CNN \u00b7 USGS \u00b7 EU Council  "
-       "\u2014  21 November 2026",
-       font=FOOT, fill=GREY, anchor="ma")
+def render_page():
+    img = Image.new("RGB", (W, H), PAPER)
+    draw = ImageDraw.Draw(img)
 
-assert y + 20 <= CANVAS[1], f"layout overflow: footer ends at {y + 20}"
+    # Outer double border.
+    draw.rectangle([14, 14, W - 15, H - 15], outline=INK, width=2)
+    draw.rectangle([20, 20, W - 21, H - 21], outline=LIGHT_GREY, width=1)
 
-here = os.path.dirname(os.path.abspath(__file__))
-assets = os.path.join(here, "assets")
-os.makedirs(assets, exist_ok=True)
-path = os.path.join(assets, "entry.png")
-canvas.save(path, "PNG", optimize=True)
+    # ---- Masthead ----
+    title = "THE WORLD IN ONE DAY"
+    title_font = serif_bold(54)
+    tw = draw.textlength(title, font=title_font)
+    draw.text(((W - tw) / 2, 34), title, font=title_font, fill=NAVY)
+    dateline = "SATURDAY, 21 NOVEMBER 2026  ·  SIX STORIES THAT DEFINED THE DAY"
+    dl_font = sans(16)
+    dw = draw.textlength(dateline, font=dl_font)
+    draw.text(((W - dw) / 2, 108), dateline, font=dl_font, fill=GREY)
+    rule(draw, MARGIN, W - MARGIN, 140, NAVY, width=3)
 
-blob = open(path, "rb").read()
-print(f"wrote {path}")
-print(f"size: {canvas.size}, bytes: {len(blob)} "
-      f"(limit 1048576: {'OK' if len(blob) <= 1048576 else 'OVER'})")
-print(f"sha256: {hashlib.sha256(blob).hexdigest()}")
-print(f"footer bottom: {y + 20} / {CANVAS[1]}")
+    # ---- Lead story ----
+    y = 160
+    draw.text((MARGIN, y), "TOP STORY  ·  MEXICO", font=sans_bold(15),
+              fill=RED)
+    y += 28
+    y = text_block(draw, MARGIN, y,
+                   ["Mexico captures", "\u201cEl Chapo Isidro\u201d"],
+                   serif_bold(44), INK, 52)
+    y += 8
+    deck = ("FBI most-wanted kingpin seized in a Sinaloa raid "
+            "backed by U.S. intelligence.")
+    y = text_block(draw, MARGIN, y,
+                   wrap(draw, deck, serif(20), 640), serif(20), INK, 27)
+    y += 6
+    body = ("Fausto Isidro Meza Flores was taken in Guasave late on "
+            "20 November and the arrest was announced on 21 November. "
+            "Four soldiers and seven gunmen were killed in the operation.")
+    y = text_block(draw, MARGIN, y,
+                   wrap(draw, body, sans(16), 640), sans(16), GREY, 22)
+
+    # Drawn badge on the right of the lead story.
+    cx, cy, r = 862, 292, 92
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=RED,
+                 outline=NAVY, width=4)
+    draw.ellipse([cx - r + 14, cy - r + 14, cx + r - 14, cy + r - 14],
+                 outline=WHITE, width=2)
+    draw.polygon(star_points(cx, cy - 26, 40, 17), fill=WHITE)
+    badge_font = sans_bold(15)
+    for i, word in enumerate(["FBI TOP 10", "MOST WANTED"]):
+        ww = draw.textlength(word, font=badge_font)
+        draw.text((cx - ww / 2, cy + 24 + i * 22), word, font=badge_font,
+                  fill=WHITE)
+
+    rule(draw, MARGIN, W - MARGIN, 436, INK, width=2)
+
+    # ---- Middle grid ----
+    left_x = MARGIN
+    right_x = 526
+    col_w = 462
+    mid_y = 456
+
+    y = mid_y
+    y = story(
+        draw, left_x, y, col_w,
+        "CLIMATE  ·  COP31",
+        "Climate talks run into overtime with no deal",
+        "Negotiators in Bel\u00e9m stayed past the deadline as a draft "
+        "text dropped all mention of fossil fuels.")
+    y += 12
+    y = story(
+        draw, left_x, y, col_w,
+        "UKRAINE  ·  KRYVYI RIH",
+        "Missile strike hits Zelenskyy\u2019s home city",
+        "Two people were killed and 60 injured in a Russian strike; "
+        "a second missile hit rescue workers.")
+    y += 12
+    y = story(
+        draw, left_x, y, col_w,
+        "BALTIC SEA",
+        "Russian freighter ablaze after drone attack",
+        "Sparta II caught fire and drifted toward Finnish waters; "
+        "all 16 crew members were evacuated.")
+    assert y <= 836, f"left column overflow: {y}"
+
+    y = mid_y
+    y = story(
+        draw, right_x, y, col_w,
+        "PERU",
+        "Magnitude 6.7 quake shakes Jun\u00edn",
+        "The tremor struck north of Jun\u00edn. No deaths and no "
+        "serious damage were reported.")
+    y += 12
+    y = story(
+        draw, right_x, y, col_w,
+        "UKRAINE  ·  DIPLOMACY",
+        "Zelenskyy: Trump told Europe it spends too much",
+        "Ukraine\u2019s president said the U.S. president pressed "
+        "European leaders over their Ukraine spending.")
+    assert y <= 700, f"right column overflow: {y}"
+
+    # Numbers box.
+    box_y0, box_y1 = 700, 836
+    draw.rectangle([right_x, box_y0, W - MARGIN, box_y1], fill=NAVY)
+    draw.text((right_x + 16, box_y0 + 12), "THE DAY IN NUMBERS",
+              font=sans_bold(15), fill=WHITE)
+    numbers = [
+        ("6.7", "magnitude of the Peru earthquake"),
+        ("2 killed \u00b7 60 injured", "Kryvyi Rih strike"),
+        ("16", "crew evacuated from Sparta II"),
+        ("11 dead \u00b7 180+ in hospital", "India hooch tragedy"),
+    ]
+    ny = box_y0 + 40
+    for big, small in numbers:
+        draw.text((right_x + 16, ny), big, font=sans_bold(14), fill=WHITE)
+        bw = draw.textlength(big, font=sans_bold(14))
+        draw.text((right_x + 16 + bw + 8, ny), "\u2014 " + small,
+                  font=sans(14), fill=(200, 210, 225))
+        ny += 23
+
+    # ---- ALSO TODAY band ----
+    band_y0, band_y1 = 856, 962
+    draw.rectangle([MARGIN, band_y0, W - MARGIN, band_y1], fill=INK)
+    draw.text((MARGIN + 16, band_y0 + 10), "ALSO TODAY",
+              font=sans_bold(15), fill=(255, 200, 90))
+    also = [
+        ("INDIA", "At least 11 dead and 180 hospitalised after "
+         "drinking tainted liquor in Manipur."),
+        ("BRUSSELS", "EU approves a further \u20ac1bn in military aid "
+         "for Ukraine."),
+        ("HORMUZ", "Two oil tankers attacked near the Strait of "
+         "Hormuz."),
+    ]
+    col_w3 = 292
+    for i, (place, text) in enumerate(also):
+        ax = MARGIN + 16 + i * (col_w3 + 12)
+        lines = wrap(draw, text, sans(14), col_w3)
+        yy = band_y0 + 36
+        draw.text((ax, yy), place, font=sans_bold(13),
+                  fill=(255, 200, 90))
+        text_block(draw, ax, yy + 20, lines, sans(14), WHITE, 19)
+
+    # ---- Footer ----
+    footer = ("Sources: Reuters \u00b7 AP \u00b7 CNN \u00b7 WSJ \u00b7 USGS \u00b7 "
+              "EU Council \u00b7 UKMTO  —  Image drawn entirely in code.")
+    ff = sans(13)
+    fw = draw.textlength(footer, font=ff)
+    draw.text(((W - fw) / 2, 978), footer, font=ff, fill=GREY)
+
+    return img

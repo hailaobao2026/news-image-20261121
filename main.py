@@ -1,28 +1,40 @@
-#!/usr/bin/env python3
-"""Entrypoint: copy the pre-rendered front page to the harness output dir.
+"""Entrypoint: render the 21 November 2026 front page to entry.png.
 
-Standard library only, no network, fully deterministic: the bytes written
-are exactly the bytes of assets/entry.png, so every run is identical.
+Usage:
+    python3 main.py
+
+Writes assets/entry.png next to this file, or $MAKEFUN_OUTPUT_DIR/entry.png
+when that variable is set (the competition harness sets it). Deterministic:
+same input, same bytes, every run.
 """
+
+import hashlib
 import os
-import shutil
 import sys
+from pathlib import Path
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-IMAGE = os.path.join(BASE, "assets", "entry.png")
-TARGET = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from render import render_page  # noqa: E402
 
 
-def run():
-    if not os.path.isfile(IMAGE):
-        print(f"missing source image: {IMAGE}", file=sys.stderr)
-        return 1
-    os.makedirs(TARGET, exist_ok=True)
-    dest = os.path.join(TARGET, "entry.png")
-    shutil.copyfile(IMAGE, dest)
-    print(f"wrote {dest} ({os.path.getsize(dest)} bytes)")
+def output_path():
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
+    if out_dir:
+        return Path(out_dir) / "entry.png"
+    return Path(__file__).resolve().parent / "assets" / "entry.png"
+
+
+def main():
+    path = output_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = render_page()
+    image.save(path, format="PNG")
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    print(f"wrote {path} ({len(data)} bytes, sha256 {digest})")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(run())
+    raise SystemExit(main())
